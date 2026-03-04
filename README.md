@@ -26,15 +26,15 @@ YACE ────────── CloudWatch API ──────► Prometh
 
   **原因 1: PI counter 指标在 MySQL 8.4 上全部不可用（实测确认）**
 
-  在 database-1 (MySQL 8.4.7) 上实测：开启 PI 后等待 15 分钟预热，通过 `get-resource-metrics` API 逐个查询所有 `db.*` counter 指标，**全部返回 `InvalidArgumentException: The specified statistic is not a known statistic`**。仅 `db.load.avg`（平均活跃会话数）能正常返回。测试覆盖了 `db.SQL.Queries`、`db.SQL.Com_select`、`db.Users.Threads_running`、`db.Cache.*`、`db.IO.*`、`db.Locks.*`、`db.Transactions.*`、`os.*` —— 无一可用。MySQL 8.4 移除了 `Com_*` 等状态变量，PI 的 counter 采集机制尚未适配。
+  在 database-1 (MySQL 8.4.7) 上分别测试了 PI 标准模式 (7 天保留) 和 Database Insights Advanced 模式 (465 天保留)，`performance_schema` consumers 确认全部启用，每次等待 15 分钟预热。通过 `get-resource-metrics` 逐个查询 `db.SQL.Queries`、`db.Users.Threads_running`、`db.Cache.*`、`db.IO.*`、`db.Locks.*`、`os.*` 等 counter 指标，**两种模式下全部返回 `InvalidArgumentException: The specified statistic is not a known statistic`**。仅 `db.load.avg` 能正常返回。MySQL 8.4 的变更导致 PI counter 采集失效。
 
-  **原因 2: 即便 counter 能工作，PI 仍缺 9 项指标（覆盖率仅 61%）**
+  **原因 2: 即便 counter 能工作，PI 的指标目录仍缺 9 项（覆盖率 61%）**
 
-  PI 的指标目录中不包含：TPS (commit/rollback)、Com_insert/update/delete、Innodb_data_reads、Innodb_data_fsyncs、行锁平均时间、SHOW REPLICA STATUS 相关指标（延迟距离/Slave SQL/IO Running）。即便 PI 正常工作，仍需 mysqld_exporter 补齐，PI 成为多余环节。
+  PI 不提供：TPS (commit/rollback)、Com_insert/update/delete、Innodb_data_reads、Innodb_data_fsyncs、行锁平均时间、SHOW REPLICA STATUS 相关指标。即便 PI 正常工作，仍需 mysqld_exporter 补齐。
 
   **原因 3: PI 数据不在 CloudWatch Metrics 中，YACE 无法采集**
 
-  PI counter 指标存储在 PI 自有存储中，不在 CloudWatch Metrics 命名空间。YACE 通过 `GetMetricData` 采集，对 PI 数据不可见。唯一能让 PI 数据进入 CloudWatch 的方式是开启 Database Insights Advanced（额外付费）
+  PI counter 指标存储在 PI 自有存储中，不在 CloudWatch Metrics 命名空间。YACE 通过 `GetMetricData` 采集，对 PI 数据不可见。Database Insights Advanced 能将 PI 数据写入 CloudWatch，但需要 465 天保留期（额外付费），且受限于原因 1 和 2
 
 ### MySQL 8.4 破坏性变更
 
