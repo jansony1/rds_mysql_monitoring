@@ -14,55 +14,10 @@ discovery:
       length: 120
       delay: 120
       metrics:
-        # === OS 级指标 (RDS 标准) ===
+        # 仅 3 项 OS 级指标 (mysqld_exporter 无法获取)
         - name: CPUUtilization
           statistics: [Average, Maximum]
         - name: FreeableMemory
           statistics: [Average]
         - name: FreeStorageSpace
-          statistics: [Average]
-        - name: FileSysDiskSpaceUtilization
-          statistics: [Average]
-
-        # === MySQL 引擎指标 (PI 发布到 CloudWatch) ===
-        # QPS
-        - name: Queries
-          statistics: [Average]
-        # 连接/线程
-        - name: ThreadsConnected
-          statistics: [Average]
-        - name: ThreadsRunning
-          statistics: [Average]
-        - name: ThreadsCreated
-          statistics: [Average]
-        # 慢查询
-        - name: SlowQueries
-          statistics: [Average]
-        # SQL 类型
-        - name: SelectCommands
-          statistics: [Average]
-        - name: InnoDBRowsInserted
-          statistics: [Average]
-        - name: InnoDBRowsUpdated
-          statistics: [Average]
-        - name: InnoDBRowsDeleted
-          statistics: [Average]
-        # InnoDB 缓存
-        - name: InnoDBBufferPoolHitRate
-          statistics: [Average]
-        - name: InnoDBBufferPoolUtilization
-          statistics: [Average]
-        # InnoDB IO
-        - name: InnoDBBufferPoolReads
-          statistics: [Average]
-        - name: InnoDBDataWrites
-          statistics: [Average]
-        # 锁
-        - name: TableLocksWaited
-          statistics: [Average]
-        - name: TableLocksImmediate
-          statistics: [Average]
-        - name: InnoDBRowLockWaits
-          statistics: [Average]
-        - name: InnoDBRowLockTime
           statistics: [Average]

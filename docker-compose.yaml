@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  # YACE - 主力采集器: 18 项指标 (PI 发布到 CloudWatch 的 counter + OS 标准指标)
+  # YACE - 补 3 项 OS 指标 (CPU/内存/磁盘, mysqld_exporter 无法获取)
   yace:
     image: ghcr.io/nerdswords/yet-another-cloudwatch-exporter:v0.62.0
     container_name: yace
@@ -19,7 +19,7 @@ services:
       - --listen-address=:5000
       - --scraping-interval=60
 
-  # mysqld_exporter - 补齐 CloudWatch 缺失的 5 项: TPS, fsync, 复制状态
+  # mysqld_exporter - 主力: 20 项引擎指标
   mysqld-exporter:
     image: prom/mysqld-exporter:v0.16.0
     container_name: mysqld-exporter
@@ -33,10 +33,19 @@ services:
       MYSQLD_EXPORTER_PASSWORD: ${MYSQL_EXPORTER_PASSWORD}
     command:
       - --config.my-cnf=/etc/.mysqld_exporter.cnf
-      - --no-collect.info_schema.query_response_time  # Percona 专有, RDS 报错
-      - --collect.global_status                # Handler_commit/rollback (TPS), Innodb_data_fsyncs
-      - --collect.global_variables             # max_connections 等
-      - --collect.slave_status                 # 复制状态 (仅只读副本有数据)
+      - --no-collect.info_schema.query_response_time
+      - --collect.global_status
+      - --collect.global_variables
+      - --collect.slave_status
+      - --collect.info_schema.innodb_metrics
+      - --collect.info_schema.processlist
+      - --collect.engine_innodb_status
+      - --collect.perf_schema.eventsstatements
+      - --collect.perf_schema.eventsstatementssum
+      - --collect.perf_schema.eventswaits
+      - --collect.perf_schema.tableiowaits
+      - --collect.perf_schema.tablelocks
+      - --collect.perf_schema.file_events
       - --exporter.lock_wait_timeout=2
 
   # Prometheus
