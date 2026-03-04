@@ -1,15 +1,7 @@
-###############################################################################
-# Docker Compose: YACE + mysqld_exporter + Prometheus
-# 完整的 RDS MySQL 监控方案
-###############################################################################
 version: "3.8"
 
 services:
-  # ==========================================================================
-  # YACE - 仅采集 mysqld_exporter 无法获取的 3 项 OS 级指标
-  # (CPU利用率 / 可用内存 / 可用磁盘)
-  # 暴露端口: 5000
-  # ==========================================================================
+  # YACE - 主力采集器: 18 项指标 (PI 发布到 CloudWatch 的 counter + OS 标准指标)
   yace:
     image: ghcr.io/nerdswords/yet-another-cloudwatch-exporter:v0.62.0
     container_name: yace
@@ -19,21 +11,15 @@ services:
     volumes:
       - ./yace-config.yaml:/tmp/config.yml:ro
     environment:
-      # 方式1: 通过环境变量配置 AWS 凭证
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      # 方式2: 如使用 IAM Role (EC2/ECS)，删除上面两行 KEY 即可
     command:
       - --config.file=/tmp/config.yml
       - --listen-address=:5000
       - --scraping-interval=60
 
-  # ==========================================================================
-  # mysqld_exporter - 直连 MySQL 采集 20 项引擎指标 (主力采集器)
-  # 采集: QPS/TPS/线程/慢查询/SQL类型/InnoDB/锁/Slave状态 等
-  # 暴露端口: 9104
-  # ==========================================================================
+  # mysqld_exporter - 补齐 CloudWatch 缺失的 5 项: TPS, fsync, 复制状态
   mysqld-exporter:
     image: prom/mysqld-exporter:v0.16.0
     container_name: mysqld-exporter
@@ -42,46 +28,18 @@ services:
       - "9104:9104"
     volumes:
       - ./mysqld-exporter.cnf:/etc/.mysqld_exporter.cnf:ro
-      # RDS CA 证书 (用于 SSL 连接)
       - ./global-bundle.pem:/etc/ssl/certs/global-bundle.pem:ro
     environment:
-      # 密码通过环境变量传入，覆盖 .cnf 中的 password 字段 (更安全)
       MYSQLD_EXPORTER_PASSWORD: ${MYSQL_EXPORTER_PASSWORD}
     command:
       - --config.my-cnf=/etc/.mysqld_exporter.cnf
-      # ============================================================
-      # [重要] 禁用在 RDS 上会报错的默认 collector
-      # ============================================================
-      - --no-collect.info_schema.query_response_time  # Percona 专有, RDS 报错 "Unknown system variable"
-      # ============================================================
-      # 核心 collector (默认开启, 显式列出便于维护)
-      # ============================================================
-      - --collect.global_status                # SHOW GLOBAL STATUS (Threads_*, Slow_queries, InnoDB_*, Table_locks_*, Handler_commit/rollback)
-                                                 # ⚠️ MySQL 8.4: Com_* 已移除, TPS 用 Handler_commit/rollback
-      - --collect.global_variables             # SHOW GLOBAL VARIABLES (max_connections 等)
-      - --collect.slave_status                 # SHOW SLAVE STATUS (仅在只读副本上产生数据, 主库上安全返回空)
-      # ============================================================
-      # 推荐开启的 opt-in collector
-      # ============================================================
-      - --collect.info_schema.innodb_metrics   # information_schema.INNODB_METRICS (需参数组 innodb_monitor_enable=all)
-      - --collect.info_schema.processlist      # 线程状态分布 (需 PROCESS 权限)
-      - --collect.engine_innodb_status         # SHOW ENGINE INNODB STATUS - 行锁详情 (需 PROCESS 权限)
-      - --collect.binlog_size                  # 二进制日志磁盘占用 (需 REPLICATION CLIENT 权限)
-      - --collect.perf_schema.eventsstatements     # ⚠️ MySQL 8.4 必须: Com_* 已移除, 各类SQL次数从此 collector 获取
-      - --collect.perf_schema.eventsstatementssum  # SQL 聚合统计
-      - --collect.perf_schema.eventswaits          # 等待事件统计
-      - --collect.perf_schema.tableiowaits         # 表级 I/O 等待
-      - --collect.perf_schema.tablelocks           # 表级锁等待
-      - --collect.perf_schema.file_events          # 文件 I/O 事件
-      # ============================================================
-      # 安全设置
-      # ============================================================
-      - --exporter.lock_wait_timeout=2         # 查询元数据锁等待超时 2 秒, 避免被 DDL 阻塞
+      - --no-collect.info_schema.query_response_time  # Percona 专有, RDS 报错
+      - --collect.global_status                # Handler_commit/rollback (TPS), Innodb_data_fsyncs
+      - --collect.global_variables             # max_connections 等
+      - --collect.slave_status                 # 复制状态 (仅只读副本有数据)
+      - --exporter.lock_wait_timeout=2
 
-  # ==========================================================================
-  # Prometheus - 统一采集 YACE + mysqld_exporter
-  # 暴露端口: 9090
-  # ==========================================================================
+  # Prometheus
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: prometheus
