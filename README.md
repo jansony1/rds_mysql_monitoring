@@ -22,7 +22,27 @@ YACE ────────── CloudWatch API ──────► Prometh
 
 - **mysqld_exporter (主力)**: 23 项指标中 20 项来自 MySQL 引擎 (`SHOW GLOBAL STATUS` / `perf_schema` / `SHOW REPLICA STATUS`)，只能直连数据库获取
 - **YACE (辅助)**: CPU/内存/磁盘是 OS 级指标，RDS 托管服务无法安装 node_exporter，只有 CloudWatch 能提供
-- **Performance Insights 已关闭**: 与 mysqld_exporter 完全重叠，且 PI 数据不在 CloudWatch Metrics 中（存在 PI 自有存储），YACE 无法采集。唯一能让 PI 数据进入 CloudWatch 的方式是开启 Database Insights Advanced（额外付费），但仍缺 9 项指标（TPS、Com_insert/update/delete、Innodb_data_reads/fsyncs、行锁 avg、复制线程状态），依然需要 mysqld_exporter 补齐
+- **Performance Insights 已关闭**: 两个原因——
+
+  **原因 1: PI 覆盖不全（23 项只能覆盖 14 项，缺 9 项）**
+
+  | 缺失指标 | 为什么 PI 没有 |
+  |---------|---------------|
+  | #5 TPS (commit/rollback) | PI 无 commit/rollback 计数器 |
+  | #10 Com_insert | PI 仅有 Com_select，无 insert/update/delete |
+  | #10 Com_update | 同上 |
+  | #10 Com_delete | 同上 |
+  | #13 Innodb_data_reads | PI IO 类仅有 writes，无 reads |
+  | #15 Innodb_data_fsyncs | PI 无此计数器 |
+  | #19 行锁平均时间 | PI 有 row_lock_time 但无 avg |
+  | #20 主从延迟距离 (bytes) | PI 不采集 SHOW REPLICA STATUS |
+  | #22-23 Slave SQL/IO Running | PI 不采集复制线程状态 |
+
+  因此即便开启 PI，仍需 mysqld_exporter 补齐这 9 项，PI 成为多余环节。
+
+  **原因 2: PI 数据不在 CloudWatch Metrics 中，YACE 无法采集**
+
+  PI counter 指标存储在 PI 自有存储中，不在 CloudWatch Metrics 命名空间。YACE 通过 `GetMetricData` API 采集 CloudWatch Metrics，对 PI 数据不可见。唯一能让 PI 数据进入 CloudWatch 的方式是开启 Database Insights Advanced（额外付费），但仍缺上述 9 项。mysqld_exporter 直连 MySQL → Prometheus，零中间环节，100% 覆盖
 
 ### MySQL 8.4 破坏性变更
 
