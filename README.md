@@ -22,27 +22,32 @@ YACE ────────── CloudWatch API ──────► Prometh
 
 - **mysqld_exporter (主力)**: 23 项指标中 20 项来自 MySQL 引擎 (`SHOW GLOBAL STATUS` / `perf_schema` / `SHOW REPLICA STATUS`)，只能直连数据库获取
 - **YACE (辅助)**: CPU/内存/磁盘是 OS 级指标，RDS 托管服务无法安装 node_exporter，只有 CloudWatch 能提供
-- **Performance Insights 已关闭**: 两个原因——
+- **Performance Insights 已关闭**: 三个原因——
 
-  **原因 1: PI 覆盖不全（23 项只能覆盖 14 项，缺 9 项）**
+  **原因 1: PI counter 指标在 MySQL 8.4 上全部不可用（实测确认）**
 
-  | 缺失指标 | 为什么 PI 没有 |
-  |---------|---------------|
+  在 database-1 (MySQL 8.4.7) 上实测：PI 的 `list-available-resource-metrics` 列出了 50+ 个 `db.*` counter 指标，但通过 `get-resource-metrics` 实际查询时 **全部返回错误**：
+  ```
+  InvalidArgumentException: The specified statistic is not a known statistic
+  ```
+  测试的指标包括 `db.SQL.Queries`、`db.SQL.Com_select`、`db.Users.Threads_running`、`db.Cache.innoDB_buffer_pool_hit_rate`、`db.IO.Innodb_data_writes`、`db.Locks.Table_locks_waited` 等——全部 FAIL。仅 `db.load.avg`（平均活跃会话数）能正常返回数据。
+
+  MySQL 8.4 移除了 `Com_*` 等大量状态变量，PI 的 counter 采集机制尚未适配这些变更。
+
+  **原因 2: 即便 counter 能工作，PI 仍缺 9 项指标**
+
+  | 缺失指标 | 原因 |
+  |---------|------|
   | #5 TPS (commit/rollback) | PI 无 commit/rollback 计数器 |
-  | #10 Com_insert | PI 仅有 Com_select，无 insert/update/delete |
-  | #10 Com_update | 同上 |
-  | #10 Com_delete | 同上 |
-  | #13 Innodb_data_reads | PI IO 类仅有 writes，无 reads |
+  | #10 Com_insert/update/delete | PI 仅有 Com_select |
+  | #13 Innodb_data_reads | PI IO 类仅有 writes |
   | #15 Innodb_data_fsyncs | PI 无此计数器 |
-  | #19 行锁平均时间 | PI 有 row_lock_time 但无 avg |
-  | #20 主从延迟距离 (bytes) | PI 不采集 SHOW REPLICA STATUS |
-  | #22-23 Slave SQL/IO Running | PI 不采集复制线程状态 |
+  | #19 行锁平均时间 | PI 无 avg 导出 |
+  | #20 主从延迟距离, #22-23 Slave 状态 | PI 不采集 SHOW REPLICA STATUS |
 
-  因此即便开启 PI，仍需 mysqld_exporter 补齐这 9 项，PI 成为多余环节。
+  **原因 3: PI 数据不在 CloudWatch Metrics 中，YACE 无法采集**
 
-  **原因 2: PI 数据不在 CloudWatch Metrics 中，YACE 无法采集**
-
-  PI counter 指标存储在 PI 自有存储中，不在 CloudWatch Metrics 命名空间。YACE 通过 `GetMetricData` API 采集 CloudWatch Metrics，对 PI 数据不可见。唯一能让 PI 数据进入 CloudWatch 的方式是开启 Database Insights Advanced（额外付费），但仍缺上述 9 项。mysqld_exporter 直连 MySQL → Prometheus，零中间环节，100% 覆盖
+  PI counter 指标存储在 PI 自有存储中，不在 CloudWatch Metrics 命名空间。YACE 通过 `GetMetricData` 采集，对 PI 数据不可见。唯一能让 PI 数据进入 CloudWatch 的方式是开启 Database Insights Advanced（额外付费）
 
 ### MySQL 8.4 破坏性变更
 
