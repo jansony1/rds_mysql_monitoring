@@ -126,6 +126,92 @@ PI: 不开启
 - **TPS**: `Handler_commit` + `Handler_rollback`（global_status 中仍有）
 - **各类 SQL 次数**: `perf_schema.events_statements_summary_global_by_event_name` 中的 `statement/sql/select|insert|update|delete`
 
+### YACE 抓取 CloudWatch API 示例
+
+YACE 底层通过 CloudWatch `GetMetricData` API 获取数据。以下是等价的 API 调用示例，展示 3 项 OS 指标的实际获取方式：
+
+```python
+import boto3, datetime
+
+cw = boto3.client('cloudwatch', region_name='us-east-1')
+
+# 单指标查询示例: CPUUtilization
+resp = cw.get_metric_data(
+    MetricDataQueries=[{
+        'Id': 'cpu',
+        'MetricStat': {
+            'Metric': {
+                'Namespace': 'AWS/RDS',
+                'MetricName': 'CPUUtilization',
+                'Dimensions': [{'Name': 'DBInstanceIdentifier', 'Value': 'database-1'}]
+            },
+            'Period': 60,
+            'Stat': 'Average'
+        }
+    }],
+    StartTime=datetime.datetime.utcnow() - datetime.timedelta(minutes=5),
+    EndTime=datetime.datetime.utcnow(),
+)
+print(resp['MetricDataResults'][0]['Values'])  # [1.9667]
+```
+
+```python
+# 批量查询 3 项 OS 指标 (YACE 每次 scrape 做的事)
+resp = cw.get_metric_data(
+    MetricDataQueries=[
+        {
+            'Id': 'cpu',
+            'MetricStat': {
+                'Metric': {
+                    'Namespace': 'AWS/RDS',
+                    'MetricName': 'CPUUtilization',
+                    'Dimensions': [{'Name': 'DBInstanceIdentifier', 'Value': 'database-1'}]
+                },
+                'Period': 60, 'Stat': 'Average'
+            }
+        },
+        {
+            'Id': 'mem',
+            'MetricStat': {
+                'Metric': {
+                    'Namespace': 'AWS/RDS',
+                    'MetricName': 'FreeableMemory',
+                    'Dimensions': [{'Name': 'DBInstanceIdentifier', 'Value': 'database-1'}]
+                },
+                'Period': 60, 'Stat': 'Average'
+            }
+        },
+        {
+            'Id': 'disk',
+            'MetricStat': {
+                'Metric': {
+                    'Namespace': 'AWS/RDS',
+                    'MetricName': 'FreeStorageSpace',
+                    'Dimensions': [{'Name': 'DBInstanceIdentifier', 'Value': 'database-1'}]
+                },
+                'Period': 60, 'Stat': 'Average'
+            }
+        },
+    ],
+    StartTime=datetime.datetime.utcnow() - datetime.timedelta(minutes=5),
+    EndTime=datetime.datetime.utcnow(),
+)
+
+for r in resp['MetricDataResults']:
+    print(f"{r['Id']:6s} = {r['Values'][0]:.2f}")
+# 输出:
+# cpu    = 1.97       (百分比)
+# mem    = 6325321728.00  (字节, 约 5.9GB 可用)
+# disk   = 102777561088.00  (字节, 约 95.7GB 可用)
+```
+
+YACE 将上述 API 返回值自动转为 Prometheus 格式暴露在 `:5000/metrics`：
+```
+aws_rds_cpuutilization_average{dimension_DBInstanceIdentifier="database-1"} 1.9667
+aws_rds_freeable_memory_average{dimension_DBInstanceIdentifier="database-1"} 6325321728
+aws_rds_free_storage_space_average{dimension_DBInstanceIdentifier="database-1"} 102777561088
+```
+
 ---
 
 ## 3. RDS 侧配置
