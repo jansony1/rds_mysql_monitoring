@@ -1,0 +1,21 @@
+###############################################################################
+# Prometheus 配置: 采集 YACE 和 mysqld_exporter
+###############################################################################
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+scrape_configs:
+  # YACE - CloudWatch 指标
+  - job_name: "yace"
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    static_configs:
+      - targets: ["yace:5000"]
+
+  # mysqld_exporter - MySQL 引擎内部指标
+  - job_name: "mysqld-exporter"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]

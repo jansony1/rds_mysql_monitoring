@@ -1,0 +1,38 @@
+###############################################################################
+# YACE (Yet Another CloudWatch Exporter) 配置文件
+# 用途: 仅采集 mysqld_exporter 无法获取的 3 项 OS 级指标
+# 其余 20 项指标全部由 mysqld_exporter 直连 MySQL 采集
+###############################################################################
+apiVersion: v1alpha1
+
+discovery:
+  exportedTagsOnMetrics:
+    AWS/RDS:
+      - Name
+      - DBInstanceIdentifier
+
+  jobs:
+    - type: AWS/RDS
+      regions:
+        - us-east-1
+      period: 60
+      length: 120
+      delay: 120
+      metrics:
+        # #1 CPU利用率 — RDS 托管服务, 仅 CloudWatch 能提供
+        - name: CPUUtilization
+          statistics:
+            - Average
+            - Maximum
+
+        # #2 内存利用率 — OS 级可用内存, mysqld_exporter 无法获取
+        #    Grafana 计算: (1 - FreeableMemory / 总内存) * 100
+        - name: FreeableMemory
+          statistics:
+            - Average
+
+        # #3 磁盘利用率 — OS 级剩余磁盘, mysqld_exporter 无法获取
+        #    Grafana 计算: (1 - FreeStorageSpace / 总磁盘) * 100
+        - name: FreeStorageSpace
+          statistics:
+            - Average
